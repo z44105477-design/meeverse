@@ -755,6 +755,7 @@ const DEFAULT_PRODUCTS_SEED = [
 
 
 let LANG = "fr";
+function toggleLang(){ LANG = LANG==="fr" ? "ar" : "fr"; render(); }
 
 let ADMIN_LOGGED_IN = false;
 
@@ -1885,6 +1886,10 @@ function renderAdmin(){
   <div class="admin-shell">
     <div class="admin-sidebar">
       <div class="admin-brand">Meeverse</div>
+      <div class="lang-toggle" style="margin:0 24px 18px;">
+        <button class="${LANG==='fr'?'active':''}" onclick="LANG='fr';render();">FR</button>
+        <button class="${LANG==='ar'?'active':''}" onclick="LANG='ar';render();">AR</button>
+      </div>
       ${tabs.map(([id,label])=>`<div class="admin-nav-item ${ADMIN_TAB===id?'active':''}" onclick="ADMIN_TAB='${id}';render();">${label}</div>`).join("")}
       <div class="admin-nav-item" onclick="adminLogout()" style="margin-top:20px;opacity:.6;">${t('admin_logout')} ↩</div>
       <div class="admin-nav-item" onclick="window.location.href='index.html'" style="opacity:.6;">${t('back_to_shop')}</div>
