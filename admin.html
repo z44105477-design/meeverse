@@ -1133,7 +1133,7 @@ function showToast(msg){
 function esc(str){ const d=document.createElement("div"); d.innerText = str==null?"":str; return d.innerHTML; }
 
 
-function adminLogout(){ ADMIN_LOGGED_IN=false; render(); }
+async function adminLogout(){ ADMIN_LOGGED_IN=false; await LocalStore.set("adminSession", ""); render(); }
 
 
 async function submitAdminLogin(e){
@@ -1141,7 +1141,9 @@ async function submitAdminLogin(e){
   const pass = e.target.password.value;
   const hash = await sha256(pass);
   if(hash === SETTINGS.adminPasswordHash){
-    ADMIN_LOGGED_IN = true; ADMIN_LOGIN_ERROR=""; PAGE="admin"; ADMIN_TAB="products"; render();
+    ADMIN_LOGGED_IN = true; ADMIN_LOGIN_ERROR=""; PAGE="admin"; ADMIN_TAB="products";
+    await LocalStore.set("adminSession", "1");
+    render();
   }else{
     ADMIN_LOGIN_ERROR = t('admin_login_error'); render();
   }
@@ -1573,10 +1575,11 @@ async function sendOrderTo48HR(orderId, silent){
 
 
 function renderAdminOrders(){
+  const sortedOrders = [...ORDERS].sort((a,b)=> new Date(b.date) - new Date(a.date));
   return `
   <div class="admin-topbar"><h2 class="serif" style="margin:0;">${t('admin_orders')}</h2></div>
-  ${ORDERS.length===0 ? `<div class="admin-card"><p class="hint">${t('orders_none')}</p></div>` :
-    ORDERS.map(o=>`
+  ${sortedOrders.length===0 ? `<div class="admin-card"><p class="hint">${t('orders_none')}</p></div>` :
+    sortedOrders.map(o=>`
     <div class="admin-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
         <div>
@@ -1948,6 +1951,8 @@ async function ensureAdminPasswordMigrated(){
   try{
     await loadData();
     await ensureAdminPasswordMigrated();
+    const session = await LocalStore.get("adminSession");
+    if(session === "1"){ ADMIN_LOGGED_IN = true; }
     render();
   }catch(e){
     console.error("Meeverse admin init error:", e);
