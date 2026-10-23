@@ -392,6 +392,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <script>
 const ICONS = {
+  truck:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="4" width="14" height="11"/><polygon points="15 8 20 8 23 12 23 15 15 15 15 8"/><circle cx="5.5" cy="17.5" r="2"/><circle cx="18.5" cy="17.5" r="2"/></svg>',
   search:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
   cart:'<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>',
   menu:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>',
@@ -531,6 +532,7 @@ const T = {
     p_desc:"Description", p_main_image:"Image principale", p_gallery:"Images secondaires",
     save:"Enregistrer", cancel:"Annuler", delete:"Supprimer", edit:"Modifier",
     confirm_delete:"Supprimer ce produit définitivement ?",
+    confirm_delete_order:"Supprimer cette commande définitivement ? Les quantités seront remises en stock.", order_deleted:"Commande supprimée.",
     drop_image:"Cliquez pour choisir une image",
     drop_images:"Cliquez pour ajouter des images",
     no_products_admin:"Aucun produit. Ajoutez votre premier produit.",
@@ -640,6 +642,7 @@ const T = {
     p_desc:"الوصف", p_main_image:"الصورة الأساسية", p_gallery:"الصور الثانوية",
     save:"حفظ", cancel:"إلغاء", delete:"حذف", edit:"تعديل",
     confirm_delete:"هل تريد حذف هذا المنتج نهائياً؟",
+    confirm_delete_order:"هل تريد حذف هذه الطلبية نهائياً؟ ستعود الكميات إلى المخزون.", order_deleted:"تم حذف الطلبية.",
     drop_image:"اضغط لاختيار صورة",
     drop_images:"اضغط لإضافة صور",
     no_products_admin:"لا توجد منتجات. أضف أول منتج.",
@@ -1574,6 +1577,37 @@ async function sendOrderTo48HR(orderId, silent){
 }
 
 
+async function deleteOrder(id){
+  if(!confirm(t('confirm_delete_order'))) return;
+  const order = ORDERS.find(o=>o.id===id);
+  if(order){
+    const touched = [];
+    (order.items||[]).forEach(it=>{
+      const p = PRODUCTS.find(pp=>pp.id===it.id);
+      if(!p) return;
+      const hasVariants = (p.colors&&p.colors.length) || (p.sizes&&p.sizes.length);
+      if(hasVariants){
+        if(!p.stock) p.stock = {};
+        const key = (it.color||"")+"||"+(it.size||"");
+        p.stock[key] = (parseInt(p.stock[key])||0) + (parseInt(it.qty)||0);
+        touched.push(p);
+      }else if(typeof p.quantity === "number"){
+        p.quantity += (parseInt(it.qty)||0);
+        touched.push(p);
+      }
+    });
+    if(touched.length){
+      await saveProducts();
+      for(const p of touched) await pushDocToCloud("products", p);
+    }
+  }
+  ORDERS = ORDERS.filter(o=>o.id!==id);
+  await saveOrders();
+  await deleteDocFromCloud("orders", id);
+  showToast(t('order_deleted'));
+  render();
+}
+
 function renderAdminOrders(){
   const sortedOrders = [...ORDERS].sort((a,b)=> new Date(b.date) - new Date(a.date));
   return `
@@ -1585,15 +1619,16 @@ function renderAdminOrders(){
         <div>
           <strong>${t('order_from')} ${esc(o.customer.name)}</strong>
           <span class="badge-status ${o.status==='new'?'badge-new':'badge-done'}" style="margin-left:10px;">${o.status==='new'?'●':'✓'}</span>
-          <div class="hint" style="margin-top:4px;">${new Date(o.date).toLocaleString()}</div>
+          <div class="hint" style="margin-top:4px;">${new Date(o.date).toLocaleString()} — #${esc(String(o.id).replace('ord_',''))}</div>
         </div>
         <div class="row-actions">
           <button class="link-btn" onclick='resendOrderWhatsapp(${JSON.stringify(o).replace(/'/g,"&#39;")})'>${t('resend_wa')}</button>
           <button class="link-btn" onclick="toggleOrderStatus('${o.id}')">${o.status==='new'?t('mark_done'):t('mark_new')}</button>
           ${o.shipping48hr && o.shipping48hr.sent
             ? `<span class="hint" style="color:var(--green-800);">✓ ${t('already_sent_48hr')}${o.shipping48hr.trackingId?` — ${t('tracking_label')}: ${esc(o.shipping48hr.trackingId)}`:""}</span>`
-            : `<button class="link-btn" ${o.shipping48hr && o.shipping48hr.sending ? "disabled" : ""} onclick="sendOrderTo48HR('${o.id}')">${o.shipping48hr && o.shipping48hr.sending ? t('sending_48hr') : t('send_to_48hr')}</button>`
+            : `<button class="icon-btn" style="width:auto;padding:0 12px;border-radius:18px;gap:6px;font-size:12.5px;border:1px solid var(--beige-200);" title="${t('send_to_48hr')}" ${o.shipping48hr && o.shipping48hr.sending ? "disabled" : ""} onclick="sendOrderTo48HR('${o.id}')">${ICONS.truck} ${o.shipping48hr && o.shipping48hr.sending ? t('sending_48hr') : t('send_to_48hr')}</button>`
           }
+          <button class="icon-btn" style="color:var(--danger);border:1px solid var(--beige-200);" title="${t('delete')}" onclick="deleteOrder('${o.id}')">${ICONS.trash}</button>
         </div>
       </div>
       <div style="margin-top:12px;font-size:13.5px;color:#5a5a52;line-height:1.7;">
@@ -1605,6 +1640,7 @@ function renderAdminOrders(){
       <table class="admin-table" style="margin-top:12px;">
         <tbody>
           ${o.items.map(it=>`<tr><td>${esc(it.name)}${it.color||it.size?` <span class="hint">(${[it.color,it.size].filter(Boolean).map(esc).join(" / ")})</span>`:""}</td><td>x${it.qty}</td><td>${it.price*it.qty} DA</td></tr>`).join("")}
+          ${o.itemsTotal!==undefined ? `<tr><td>${t('subtotal')}</td><td></td><td>${o.itemsTotal} DA</td></tr>` : ""}
           ${o.delivery ? `<tr><td>${t('delivery')}</td><td></td><td>${o.delivery.price} DA</td></tr>` : ""}
         </tbody>
       </table>
